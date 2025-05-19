@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>English to Thai Speech Translator</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.5.0/css/all.css" integrity="sha384-B4dIYHKNBt8Bc12p+WXckhzcICo0wtJAoU8YZTY5qE0Id1GSseTk6S+L3BlXeVIU" crossorigin="anonymous">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="/static/style.css"/>
+</head>
+<body>
+    <div class="background-video">
+        <video autoplay muted loop id="myVideo">
+            <source src="/static/vid.mp4" type="video/mp4">
+            Your browser does not support HTML5 video.
+        </video>
+    </div>
+    <div class="container-fluid h-100">
+        <div class="row justify-content-center h-100">
+            <div class="col-md-8 col-xl-6 chat">
+                <div class="card">
+                    <div class="card1">
+                        <div class="card-header msg_head">
+                            <div class="d-flex bd-highlight">
+                                <div class="img_cont">
+                                    <img src="https://i.ibb.co/pdFhqYF/image-3.png" class="rounded-circle user_img">
+                                    <span class="online_icon"></span>
+                                </div>
+                                <div class="user_info">
+                                    <span>Speech Translator</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body msg_card_body">
+                            <div id="welcomeMessage" class="welcome_message">Welcome!</div>
+                            <div id="welcomeMessage1" class="welcome_message1">Upload an English MP3 or record audio to translate to Thai.</div>
+                            <div id="resultContainer" class="mt-4"></div>
+                        </div>
+                        <div class="card-footer">
+                            <form id="uploadForm" class="input-group">
+                                <input type="file" id="audio-upload" accept=".mp3" class="form-control type_msg" style="height: 60px; padding-top: 18px;" />
+                                <div class="input-group-append">
+                                    <button type="button" id="mic-btn" class="input-group-text mic_btn"><i class="fas fa-microphone"></i></button>
+                                    <button type="submit" id="process-btn" class="input-group-text send_btn"><i class="fas fa-location-arrow"></i></button>
+                                </div>
+                            </form>
+                            <audio id="mic-preview" controls class="w-100 mt-2 d-none"></audio>
+                            <div id="loading" class="mt-2 text-center d-none">
+                                <div class="spinner"></div>
+                                <p style="color: rgba(255,255,255,0.8);">Processing...</p>
+                            </div>
+                            <div id="error" class="mt-2 text-center text-danger d-none"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            console.log("jQuery loaded, form handler attached");
+
+            let mediaRecorder;
+            let audioChunks = [];
+            let isRecording = false;
+
+            // Microphone recording functionality
+            $("#mic-btn").on("click", async function() {
+                if (!isRecording) {
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        mediaRecorder = new MediaRecorder(stream);
+
+                        mediaRecorder.ondataavailable = (event) => {
+                            audioChunks.push(event.data);
+                        };
+
+                        mediaRecorder.onstop = () => {
+                            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                            const audioUrl = URL.createObjectURL(audioBlob);
+                            $("#mic-preview").attr("src", audioUrl).removeClass("d-none");
+                            audioChunks = [];
+
+                            // Send recorded audio to backend
+                            const formData = new FormData();
+                            formData.append("file", audioBlob, "recorded_audio.webm");
+
+                            $("#error").addClass("d-none");
+                            $("#loading").removeClass("d-none");
+                            $("#resultContainer").empty();
+                            $("#welcomeMessage, #welcomeMessage1").fadeOut();
+
+                            $.ajax({
+                                type: "POST",
+                                url: "/process_audio",
+                                data: formData,
+                                processData: false,
+                                contentType: false,
+                                success: function(data) {
+                                    $("#loading").addClass("d-none");
+                                    if (data.error) {
+                                        $("#error").text(data.error).removeClass("d-none");
+                                        console.error("Server error:", data.error);
+                                    } else {
+                                        console.log("Audio URL:", data.audio_url);
+                                        const resultHtml = `
+                                            <div class="d-flex justify-content-start mb-4">
+                                                <div class="img_cont_msg">
+                                                    <img src="data:image/png;base64,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" class="rounded-circle user_img_msg">
+                                                </div>
+                                                <div class="msg_cotainer">
+                                                    <strong>Transcribed English:</strong><br>
+                                                    ${data.english_text}
+                                                    <span class="msg_time">${new Date().toLocaleTimeString()}</span>
+                                                </div>
+                                            </div>
+                                            <div class="d-flex justify-content-start mb-4">
+                                                <div class="img_cont_msg">
+                                                    <img src="https://i.ibb.co/pdFhqYF/image-3.png" class="rounded-circle user_img_msg">
+                                                </div>
+                                                <div class="msg_cotainer">
+                                                    <strong>Thai Translation:</strong><br>
+                                                    ${data.thai_text}
+                                                    <span class="msg_time">${new Date().toLocaleTimeString()}</span>
+                                                </div>
+                                            </div>
+                                            <div class="d-flex justify-content-start mb-4">
+                                                <div class="img_cont_msg">
+                                                    <img src="https://i.ibb.co/pdFhqYF/image-3.png" class="rounded-circle user_img_msg">
+                                                </div>
+                                                <div class="msg_cotainer">
+                                                    <strong>Thai Audio:</strong><br>
+                                                    <audio controls class="w-100" id="thai-audio" onerror="this.nextElementSibling.classList.remove('d-none')">
+                                                        <source src="${data.audio_url}" type="audio/mpeg">
+                                                        Your browser does not support the audio element.
+                                                    </audio>
+                                                    <p class="text-danger d-none mt-2">Failed to load audio. Try downloading instead.</p>
+                                                    <br>
+                                                    <a href="${data.audio_url}" download="thai_translation.mp3" class="text-white">Download Thai Audio</a>
+                                                    <span class="msg_time">${new Date().toLocaleTimeString()}</span>
+                                                </div>
+                                            </div>
+                                        `;
+                                        $("#resultContainer").append(resultHtml);
+                                        const audioElement = document.getElementById("thai-audio");
+                                        audioElement.load();
+                                    }
+                                },
+                                error: function(jqXHR, textStatus, errorThrown) {
+                                    $("#loading").addClass("d-none");
+                                    $("#error").text("An error occurred. Please try again.").removeClass("d-none");
+                                    console.error("AJAX error:", textStatus, errorThrown);
+                                }
+                            });
+                        };
+
+                        mediaRecorder.start();
+                        isRecording = true;
+                        $(this).addClass("recording");
+                        console.log("Recording started");
+                    } catch (err) {
+                        console.error("Microphone access denied:", err);
+                        $("#error").text("Microphone access denied. Please allow access and try again.").removeClass("d-none");
+                    }
+                } else {
+                    mediaRecorder.stop();
+                    isRecording = false;
+                    $(this).removeClass("recording");
+                    console.log("Recording stopped");
+                }
+            });
+
+            // File upload functionality
+            $("#uploadForm").on("submit", function(event) {
+                event.preventDefault();
+                console.log("Form submitted");
+
+                const fileInput = $("#audio-upload")[0];
+                if (!fileInput.files.length) {
+                    $("#error").text("Please upload an MP3 file").removeClass("d-none");
+                    return;
+                }
+
+                $("#error").addClass("d-none");
+                $("#loading").removeClass("d-none");
+                $("#resultContainer").empty();
+                $("#welcomeMessage, #welcomeMessage1").fadeOut();
+
+                const formData = new FormData();
+                formData.append("file", fileInput.files[0]);
+
+                $.ajax({
+                    type: "POST",
+                    url: "/process_audio",
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function(data) {
+                        $("#loading").addClass("d-none");
+
+                        if (data.error) {
+                            $("#error").text(data.error).removeClass("d-none");
+                            console.error("Server error:", data.error);
+                        } else {
+                            console.log("Audio URL:", data.audio_url);
+                            const resultHtml = `
+                                <div class="d-flex justify-content-start mb-4">
+                                    <div class="img_cont_msg">
+                                        <img src="https://i.ibb.co/pdFhqYF/image-3.png" class="rounded-circle user_img_msg">
+                                    </div>
+                                    <div class="msg_cotainer">
+                                        <strong>Transcribed English:</strong><br>
+                                        ${data.english_text}
+                                        <span class="msg_time">${new Date().toLocaleTimeString()}</span>
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-start mb-4">
+                                    <div class="img_cont_msg">
+                                        <img src="https://i.ibb.co/pdFhqYF/image-3.png" class="rounded-circle user_img_msg">
+                                    </div>
+                                    <div class="msg_cotainer">
+                                        <strong>Thai Translation:</strong><br>
+                                        ${data.thai_text}
+                                        <span class="msg_time">${new Date().toLocaleTimeString()}</span>
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-start mb-4">
+                                    <div class="img_cont_msg">
+                                        <img src="https://i.ibb.co/pdFhqYF/image-3.png" class="rounded-circle user_img_msg">
+                                    </div>
+                                    <div class="msg_cotainer">
+                                        <strong>Thai Audio:</strong><br>
+                                        <audio controls class="w-100" id="thai-audio" onerror="this.nextElementSibling.classList.remove('d-none')">
+                                            <source src="${data.audio_url}" type="audio/mpeg">
+                                            Your browser does not support the audio element.
+                                        </audio>
+                                        <p class="text-danger d-none mt-2">Failed to load audio. Try downloading instead.</p>
+                                        <br>
+                                        <a href="${data.audio_url}" download="thai_translation.mp3" class="text-white">Download Thai Audio</a>
+                                        <span class="msg_time">${new Date().toLocaleTimeString()}</span>
+                                    </div>
+                                </div>
+                            `;
+                            $("#resultContainer").append(resultHtml);
+                            const audioElement = document.getElementById("thai-audio");
+                            audioElement.load();
+                        }
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        $("#loading").addClass("d-none");
+                        $("#error").text("An error occurred. Please try again.").removeClass("d-none");
+                        console.error("AJAX error:", textStatus, errorThrown);
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
